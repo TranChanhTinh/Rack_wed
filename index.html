@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220"><meta name="description" content="RackFlow - Quản lý sơ đồ rack, vị trí thùng và dữ liệu kho.">
+  <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}"><link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}"><link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <title>RackFlow | Quản lý kho</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('index') }}"><div class="brand-mark">R</div><div><strong>RackFlow</strong><span>WAREHOUSE SYSTEM</span></div></a>
+    <div class="nav-label">TRA CỨU NHANH</div>
+    <form class="sidebar-search" method="get" action="{{ url_for('index') }}">
+      <label for="sidebar-q">Tìm mã thùng / ô Excel</label>
+      <div class="sidebar-search-input"><span>⌕</span><input id="sidebar-q" type="search" name="q" value="{{ q }}" placeholder="VD: ML-159, B7..." autocomplete="off"></div>
+      <div id="search-suggestions" class="search-suggestions" hidden></div>
+      {% if selected_sheet %}<input type="hidden" name="sheet" value="{{ selected_sheet }}">{% endif %}
+      <button class="btn btn-primary sidebar-search-btn" type="submit">Tìm kiếm</button>
+      {% if q %}<a class="clear-search" href="{{ url_for('index', sheet=selected_sheet) if selected_sheet else url_for('index') }}">Xóa từ khóa</a>{% endif %}
+    </form>
+    <div class="nav-label nav-label-lower">WORKSPACE</div>
+    <a class="nav-item active" href="#overview"><span class="nav-icon">▦</span> Tổng quan</a>
+    <a class="nav-item" href="#rack-map"><span class="nav-icon">▥</span> Sơ đồ Excel</a>
+    <a class="nav-item" href="#search-results"><span class="nav-icon">⌕</span> Kết quả tìm kiếm</a>
+    <div class="sidebar-bottom"><span class="status-dot"></span><div><strong>Đã kết nối Excel</strong><span>Đọc trực tiếp nhiều sheet</span></div></div>
+  </aside>
+  <main class="main-content">
+    <header class="topbar" id="overview">
+      <div><div class="eyebrow">WAREHOUSE / RACK VIEW</div><h1>Quản lý kho <span>Rack</span></h1><p>Giữ nguyên bố cục các sheet Excel: ML, #1 IV, #2 IV và #3 IV.</p></div>
+      <div class="top-actions"><span class="date-chip">● Excel đã kết nối</span><button class="btn btn-outline" id="install-app" type="button" hidden>＋ Cài đặt app</button><a class="btn btn-outline" href="{{ url_for('export_excel') }}">↓ Tải Excel gốc</a></div>
+    </header>
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+    <section class="stats-grid">
+      <article class="stat-card"><div class="stat-top"><span>Tổng mã / ô có dữ liệu</span><span class="stat-icon blue">▤</span></div><div class="stat-number">{{ total }}</div><div class="stat-foot">Đếm trực tiếp từ tất cả sheet</div></article>
+      <article class="stat-card"><div class="stat-top"><span>Số sơ đồ</span><span class="stat-icon violet">▦</span></div><div class="stat-number">{{ sheet_count }}</div><div class="stat-foot">Sheet trong workbook</div></article>
+      <article class="stat-card"><div class="stat-top"><span>Kết quả hiện tại</span><span class="stat-icon green">⌕</span></div><div class="stat-number">{{ match_count }}</div><div class="stat-foot">Mã phù hợp bộ lọc</div></article>
+      <article class="stat-card accent-card"><div class="stat-top"><span>Tìm kiếm nhanh</span><span class="stat-icon white">⌕</span></div><div class="stat-number">ML / IV</div><div class="stat-foot">Tìm theo mã, sheet hoặc ô Excel</div></article>
+    </section>
+
+    <section class="panel" id="rack-map">
+      <div class="panel-heading"><div><div class="eyebrow">PHYSICAL LAYOUT</div><h2>Sơ đồ lưu trữ theo Excel</h2><p>Nhấn chuột phải vào ô để sửa, thêm, xóa hoặc di chuyển thùng.</p></div><div class="legend"><span><i class="legend-dot filled"></i> Có mã</span><span><i class="legend-dot hit"></i> Kết quả tìm kiếm</span></div></div>
+      <div class="sheet-tabs">
+        <a class="sheet-tab {% if not selected_sheet %}selected{% endif %}" href="{{ url_for('index', q=q) }}">Tất cả sheet</a>
+        {% for name in sheet_names %}<a class="sheet-tab {% if selected_sheet == name %}selected{% endif %}" href="{{ url_for('index', sheet=name, q=q) }}">{{ name }} <span>{{ sheet_counts[name] }}</span></a>{% endfor %}
+      </div>
+      {% for sheet in sheets %}
+        {% if not selected_sheet or selected_sheet == sheet.name %}
+        <article class="rack-sheet">
+          <div class="rack-sheet-head"><div><span class="sheet-badge">XLSX</span><strong>{{ sheet.name }}</strong></div><span class="sheet-meta">{{ sheet.items_count }} ô có dữ liệu · {{ sheet.max_row }} hàng</span></div>
+          <div class="grid-scroll">
+            <table class="rack-grid" style="--col-count: {{ sheet.max_col }}">
+              <tbody>
+              {% for row in sheet.rows %}
+                <tr class="rack-tier-row {{ row.tier_class|default('tier-neutral') }} {% if row.blank %}blank-row{% endif %}">
+                  <th class="row-index">{{ row.number }}</th>
+                  {% for cell in row.cells %}
+                    <td class="rack-cell {% if cell.is_level %}level-cell{% elif cell.is_zone %}zone-cell{% elif cell.is_code %}code-cell{% else %}empty-cell{% endif %} {% if cell.highlight %}hit-cell{% endif %}"
+                        data-sheet="{{ sheet.name }}" data-cell="{{ cell.coord }}" data-value="{{ cell.value }}"
+                        data-kind="{% if cell.is_level or cell.is_zone %}label{% elif cell.is_code %}box{% else %}empty{% endif %}"
+                        data-fill-color="{{ cell.fill_color }}"
+                        {% if cell.fill_color %}style="--user-cell-color: #{{ cell.fill_color }}"{% endif %}
+                        title="{{ cell.coord }}{% if cell.value %}: {{ cell.value }}{% endif %}">
+                      {% if cell.value %}
+                        {{ cell.value }}
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        {% endif %}
+      {% endfor %}
+    </section>
+
+    <section class="panel" id="search-results">
+      <div class="panel-heading"><div><div class="eyebrow">LOOKUP / LOCATION</div><h2>Tra cứu vị trí mã thùng</h2><p>Nhập mã đầy đủ hoặc một phần mã để tìm ô trong workbook.</p></div></div>
+      <form class="filters" method="get" action="{{ url_for('index') }}">
+        <div class="search-box"><span>⌕</span><input type="search" name="q" value="{{ q }}" placeholder="Ví dụ: ML-159, IV-322, ATSG-002 hoặc B7..." aria-label="Tìm mã thùng"></div>
+        {% if selected_sheet %}<input type="hidden" name="sheet" value="{{ selected_sheet }}">{% endif %}
+        <button class="btn btn-primary" type="submit">Tìm kiếm</button>
+        {% if q or selected_sheet %}<a class="btn btn-outline" href="{{ url_for('index') }}">Xóa lọc</a>{% endif %}
+      </form>
+      <div class="table-wrap"><table class="results-table"><thead><tr><th>MÃ / NỘI DUNG Ô</th><th>SHEET / RACK</th><th>Ô EXCEL</th><th>HÀNG</th></tr></thead><tbody>
+        {% for item in matches %}
+          <tr><td><span class="box-code"><span class="code-mark">▣</span>{{ item.code }}</span></td><td><span class="level-pill">{{ item.sheet }}</span></td><td><strong>{{ item.cell }}</strong></td><td>{{ item.row }}</td></tr>
+        {% else %}
+          <tr><td colspan="4"><div class="empty-table">{% if q %}Không tìm thấy mã “{{ q }}”.{% else %}Không có ô dữ liệu.{% endif %}</div></td></tr>
+        {% endfor %}
+      </tbody></table></div>
+      <div class="table-footer"><span>Đang hiển thị <strong>{{ matches|length }}</strong> kết quả</span><span>Chọn tab sheet phía trên để xem riêng từng sơ đồ</span></div>
+    </section>
+    <div id="rack-context-menu" class="rack-context-menu" hidden>
+      <button type="button" data-action="add">＋ Thêm thùng vào ô trống</button>
+      <button type="button" data-action="edit">✎ Sửa mã thùng</button>
+      <button type="button" data-action="delete">× Xóa thùng</button>
+      <button type="button" data-action="move">↔ Di chuyển thùng</button>
+      <div class="color-menu-block">
+        <div class="color-menu-title">Tô màu các ô đã chọn</div>
+        <div class="color-palette">
+          <button type="button" class="color-swatch" data-color="#17202B" style="--swatch:#17202B" aria-label="Đen than" title="Đen than"></button>
+          <button type="button" class="color-swatch" data-color="#2457A7" style="--swatch:#2457A7" aria-label="Xanh dương" title="Xanh dương"></button>
+          <button type="button" class="color-swatch" data-color="#087E8B" style="--swatch:#087E8B" aria-label="Xanh teal" title="Xanh teal"></button>
+          <button type="button" class="color-swatch" data-color="#247A4D" style="--swatch:#247A4D" aria-label="Xanh lá" title="Xanh lá"></button>
+          <button type="button" class="color-swatch" data-color="#8B5CF6" style="--swatch:#8B5CF6" aria-label="Tím" title="Tím"></button>
+          <button type="button" class="color-swatch" data-color="#B45309" style="--swatch:#B45309" aria-label="Cam" title="Cam"></button>
+          <button type="button" class="color-swatch" data-color="#B4233D" style="--swatch:#B4233D" aria-label="Đỏ" title="Đỏ"></button>
+          <button type="button" class="color-swatch" data-color="#64748B" style="--swatch:#64748B" aria-label="Xám" title="Xám"></button>
+          <button type="button" class="color-swatch color-clear" data-color="CLEAR" aria-label="Bỏ màu" title="Bỏ màu">×</button>
+        </div>
+        <label class="custom-color-label">Màu tùy chỉnh <input type="color" id="custom-cell-color" value="#2457A7"></label>
+        <small>Giữ Ctrl rồi nhấp nhiều ô để chọn; nhấp chuột phải để tô màu.</small>
+      </div>
+    </div>
+    <div id="save-toast" class="save-toast" role="status" aria-live="polite"></div>
+    <footer class="footer">RackFlow <span>•</span> Excel rack editor <span class="footer-right">Flask · OpenPyXL</span></footer>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/script.js') }}"></script><script src="{{ url_for('static', filename='js/pwa.js') }}"></script>
+</body></html>
