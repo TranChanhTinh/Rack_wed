@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: rackflow-online
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: RACK_DATA_DIR
+        value: /var/data
+      - key: RACKWEB_SECRET
+        generateValue: true
+    disk:
+      name: rackflow-data
+      mountPath: /var/data
+      sizeGB: 1
